@@ -1,7 +1,6 @@
 package com.example.disneycodechallenge_fida.presentation.guests
 
 import android.util.Log
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,47 +15,41 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
 import com.example.disneycodechallenge_fida.data.Guests
+import kotlinx.coroutines.launch
 
 @Composable
 fun Guest(
     guest: Guests,
-    checked: Boolean,
-    isAtleastOneSelected: MutableState<Boolean>,
-    hasReservationCount: MutableState<Int>,
-    enableContinue: MutableState<Boolean>,
-    onCheckedChange: ((Boolean) -> Unit)
+    viewModel: GuestViewModel,
+    checked: Boolean
 ) {
     val isChecked = rememberSaveable{ mutableStateOf(checked) }
 
     Row(verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
+            .fillMaxWidth()
             .clickable(
                 onClick = {
                     isChecked.value = !isChecked.value
                     //onCheckedChange(!checked)
                     guest.isSelected = !guest.isSelected
-                    if (guest.hasReservation){
-                        if(guest.isSelected)
-                            hasReservationCount.value++
-                        else
-                            hasReservationCount.value--
-                        isAtleastOneSelected.value = hasReservationCount.value>0
-                    }
-
-                    Log.d("proceed", hasReservationCount.value.toString())
-                    Log.d("proceed", guest.toString())
-//                    enableContinue.value = guest.isSelected
-//                    Log.d("proceed",enableContinue.value.toString())
-                }
+                    if (guest.hasReservation)
+                        viewModel.hasReservation(isChecked.value)
+                    else
+                        viewModel.needReservation(isChecked.value)
+                },
+                onClickLabel = "${if(isChecked.value) "uncheck" else "check"} ${guest.name} Checkbox, it is ${if(isChecked.value) "checked" else "not checked"}"
             )
             .clip(MaterialTheme.shapes.small)
             .requiredHeight(ButtonDefaults.MinHeight)
-            .padding(4.dp)
+            .padding(8.dp)
             //.offset(x = (-16).dp)
     ) {
 
@@ -77,16 +70,11 @@ fun Guest(
 @Composable
 fun Guests(
     names: List<Guests>,
-    isAtleastOneSelected: MutableState<Boolean>,
-    enableContinue: MutableState<Boolean>) {
-    val hasReservationCount = rememberSaveable {
-        mutableStateOf(0)
-    }
+    viewModel: GuestViewModel,
+    ) {
     Column() {
         names.forEach {
-            Guest(guest = it, false,isAtleastOneSelected,hasReservationCount,enableContinue){
-
-            }
+            Guest(guest = it, viewModel,false)
         }
     }
 }
@@ -94,29 +82,24 @@ fun Guests(
 @Composable
 fun SelectGuests(
     modifier: Modifier = Modifier,
+    viewModel: GuestViewModel,
     guests:List<Guests>,
-    isAtleastOneSelected: MutableState<Boolean>,
-    enableContinue: MutableState<Boolean>) {
+    ) {
     Column(modifier = modifier
         .verticalScroll(state = rememberScrollState())
     ) {
-        val reservedGuests = guests.filter{
-            it.hasReservation
-        }
-        val needReservationGuests = guests.filter {
-            !it.hasReservation
-        }
-        Text(text = "These Guests Have Reservations", fontWeight = FontWeight.Bold)
+        
+        Text(text = "These Guests Have Reservations", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth().semantics { heading() }.padding(8.dp))
         Guests(names = guests.filter{
             it.hasReservation
-        },isAtleastOneSelected,enableContinue)
+        },viewModel)
         //Guests(names = listOf("alpha", "beta" , "gamma","alpha", "beta" , "gamma","alpha", "beta" , "gamma","alpha", "beta" , "gamma"))
         Spacer(modifier = Modifier.height(16.dp))
-        Text(text = "These Guests Need Reservations", fontWeight = FontWeight.Bold)
+        Text(text = "These Guests Need Reservations", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth().semantics { heading() }.padding(8.dp))
         Guests(names = guests.filter {
             !it.hasReservation
-        },isAtleastOneSelected,enableContinue)
-        Row() {
+        },viewModel)
+        Row(Modifier.semantics(mergeDescendants = true) {  }.padding(8.dp)) {
             Icon(imageVector = Icons.Default.Info, contentDescription = "Info icon", modifier = Modifier
                 .size(20.dp)
                 .padding(3.dp))
@@ -126,63 +109,48 @@ fun SelectGuests(
 }
 
 @Composable
-fun SelectGuestScreen() {
-    val isAtleastOneSelected = rememberSaveable {
-        mutableStateOf(false)
-    }
-    val guests = listOf(
-        Guests("alpha", false, true),
-        Guests("beta", false, true),
-        Guests("gamma", false, true),
-        Guests("delta", false, true),
-        Guests("abc", false, false),
-        Guests("def", false, false),
-        Guests("ghi", false, false),
-        Guests("jkl", false, false)
-    )
+fun SelectGuestScreen(navController: NavController,
+                      viewModel: GuestViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
+   
+    val guests = viewModel.getGuestsList()
 
-    val enableContinue = rememberSaveable {
-        mutableStateOf(false)
-    }
-    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember {SnackbarHostState() }
     val scaffoldState = rememberScaffoldState()
-    //Scaffold(scaffoldState = scaffoldState) {
-    Column(
-        modifier = Modifier
-            .padding(16.dp)
-    ) {
-        SelectGuests(modifier = Modifier.weight(1f), guests, isAtleastOneSelected, enableContinue)
-        Spacer(modifier = Modifier.height(10.dp))
-
-
-
-        Button(
+    Scaffold(snackbarHost = {SnackbarHost(hostState = snackbarHostState)}) {
+        Column(
             modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .fillMaxWidth(),
-            onClick = {
-                if (isAtleastOneSelected.value) {
-                    Log.d("proceed", "Ok to proceed")
-                } else {
-//                    coroutineScope.launch {
-//                        scaffoldState.snackbarHostState.showSnackbar("Reservation Needed\n" +
-//                                "Select at least one Guest that has a reservation to continue")
-//                    }
-                    Toast.makeText(context,"Reservation Needed\nSelect at least one Guest that has a reservation to continue",
-                        Toast.LENGTH_SHORT).show()
-                }
-            },
-            colors = ButtonDefaults.textButtonColors(
-                backgroundColor = Color.Blue,
-                contentColor = Color.White
-            ),
-            shape = RoundedCornerShape(50),
-            enabled = true
+                .padding(16.dp)
         ) {
-            Text(text = "Continue")
+            SelectGuests(modifier = Modifier.weight(1f), viewModel, guests)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Button(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .fillMaxWidth(),
+                onClick = {
+                    if (viewModel.guestHasReservationCheck.value && viewModel.guestNeedReservationCheck.value)
+                        Log.d("buttonclick", "Conflict")
+                    else if (viewModel.guestHasReservationCheck.value)
+                        navController.navigate("ConfirmationScreen")
+                        //Log.d("buttonclick", " Proceed ")
+                    else
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("Reservation Needed\nSelect at least one Guest that has a reservation to continue")
+                        }
+                },
+                colors = ButtonDefaults.textButtonColors(
+                    backgroundColor = Color.Blue,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(50),
+                enabled = viewModel.guestHasReservationCheck.value || viewModel.guestNeedReservationCheck.value
+            ) {
+                Text(text = "Continue")
+            }
         }
     }
-    // }
 }
 
